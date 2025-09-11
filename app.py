@@ -312,6 +312,10 @@ def privacy():
 def health_check():
     return {'status': 'healthy', 'message': 'OAuth verification service is running'}
 
+@app.route('/test')
+def test_route():
+    return "Railway app is working! Routes are accessible."
+
 # Remove deprecated before_first_request - use startup logging instead
 print("Flask app initialized successfully!")
 print(f"Available routes: {[rule.rule for rule in app.url_map.iter_rules()]}")
