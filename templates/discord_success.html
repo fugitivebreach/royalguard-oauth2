@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <div class="logo">
+        <i class="fas fa-check-circle success"></i> Discord Connected
+    </div>
+    <div class="subtitle">Successfully authenticated with Discord</div>
+    
+    <div class="user-info">
+        <img src="https://cdn.discordapp.com/avatars/{{ user.id }}/{{ user.avatar }}.png?size=128" 
+             alt="Discord Avatar" class="user-avatar" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
+        
+        <div class="info-row">
+            <span class="info-label">Username:</span>
+            <span class="info-value">{{ user.global_name or user.username }}</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Discord ID:</span>
+            <span class="info-value">{{ user.id }}</span>
+        </div>
+    </div>
+    
+    <div class="redirect-info">
+        <p style="margin-bottom: 15px;">
+            <i class="fas fa-info-circle"></i>
+            In <span class="countdown" id="countdown">5</span> seconds, you'll be redirected to ROBLOX OAuth2 to verify your ROBLOX account.
+        </p>
+        <p style="font-size: 0.9rem; color: #888;">
+            If the redirect doesn't work, <a href="{{ url_for('roblox_auth') }}" style="color: #00a2ff;">click here</a>.
+        </p>
+    </div>
+</div>
+
+<script>
+let countdown = 5;
+const countdownElement = document.getElementById('countdown');
+
+const timer = setInterval(() => {
+    countdown--;
+    countdownElement.textContent = countdown;
+    
+    if (countdown <= 0) {
+        clearInterval(timer);
+        window.location.href = "{{ url_for('roblox_auth') }}";
+    }
+}, 1000);
+</script>
+{% endblock %}

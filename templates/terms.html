@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}Terms of Service - Arrow Industries{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 800px; text-align: left;">
+    <div class="logo" style="text-align: center;">
+        <i class="fas fa-file-contract"></i> Terms of Service
+    </div>
+    <div class="subtitle" style="text-align: center;">Arrow Industries OAuth Verification System</div>
+    
+    <div style="max-height: 500px; overflow-y: auto; padding: 20px 0;">
+        <h3 style="color: #5865f2; margin-bottom: 15px;">1. Acceptance of Terms</h3>
+        <p style="margin-bottom: 15px; line-height: 1.6;">
+            By accessing and using the Arrow Industries OAuth Verification System ("Service"), you accept and agree to be bound by the terms and provision of this agreement. If you do not agree to abide by the above, please do not use this service.
+        </p>
+
+        <h3 style="color: #5865f2; margin-bottom: 15px;">2. Data Collection and Use</h3>
+        <p style="margin-bottom: 15px; line-height: 1.6;">
+            In accordance with 15 U.S.C. § 6501 et seq. (Children's Online Privacy Protection Act), we collect and process the following information:
+        </p>
+        <ul style="margin-bottom: 15px; padding-left: 20px; line-height: 1.6;">
+            <li>Discord user ID, username, and avatar</li>
+            <li>ROBLOX user ID, username, and profile information</li>
+            <li>Verification timestamps and status</li>
+        </ul>
+
+        <h3 style="color: #5865f2; margin-bottom: 15px;">3. User Responsibilities</h3>
+        <p style="margin-bottom: 15px; line-height: 1.6;">
+            Users must provide accurate information and are responsible for maintaining the confidentiality of their account credentials. Users agree not to:
+        </p>
+        <ul style="margin-bottom: 15px; padding-left: 20px; line-height: 1.6;">
+            <li>Use the service for any unlawful purpose</li>
+            <li>Attempt to circumvent security measures</li>
+            <li>Share account credentials with third parties</li>
+            <li>Engage in fraudulent verification attempts</li>
+        </ul>
+
+        <h3 style="color: #5865f2; margin-bottom: 15px;">4. Privacy and Data Protection</h3>
+        <p style="margin-bottom: 15px; line-height: 1.6;">
+            Under the General Data Protection Regulation (GDPR) Article 6(1)(a) and California Consumer Privacy Act (CCPA) § 1798.100, users have the right to:
+        </p>
+        <ul style="margin-bottom: 15px; padding-left: 20px; line-height: 1.6;">
+            <li>Access their personal data</li>
+            <li>Request deletion of their data</li>
+            <li>Withdraw consent at any time</li>
+            <li>Data portability</li>
+        </ul>
+
+        <h3 style="color: #5865f2; margin-bottom: 15px;">5. Service Availability</h3>
+        <p style="margin-bottom: 15px; line-height: 1.6;">
+            We strive to maintain service availability but do not guarantee uninterrupted access. Service may be temporarily unavailable due to maintenance, updates, or technical issues.
+        </p>
+
+        <h3 style="color: #5865f2; margin-bottom: 15px;">6. Limitation of Liability</h3>
+        <p style="margin-bottom: 15px; line-height: 1.6;">
+            In accordance with 47 U.S.C. § 230 (Communications Decency Act), Arrow Industries shall not be liable for any indirect, incidental, special, consequential, or punitive damages resulting from your use of the service.
+        </p>
+
+        <h3 style="color: #5865f2; margin-bottom: 15px;">7. Intellectual Property</h3>
+        <p style="margin-bottom: 15px; line-height: 1.6;">
+            All content, trademarks, and intellectual property rights remain the property of Arrow Industries. Under 17 U.S.C. § 101 et seq. (Copyright Act), unauthorized reproduction is prohibited.
+        </p>
+
+        <h3 style="color: #5865f2; margin-bottom: 15px;">8. Governing Law</h3>
+        <p style="margin-bottom: 15px; line-height: 1.6;">
+            These terms shall be governed by and construed in accordance with the laws of the United States and applicable state laws, without regard to conflict of law provisions.
+        </p>
+
+        <h3 style="color: #5865f2; margin-bottom: 15px;">9. Changes to Terms</h3>
+        <p style="margin-bottom: 15px; line-height: 1.6;">
+            We reserve the right to modify these terms at any time. Users will be notified of significant changes via email or service notification.
+        </p>
+
+        <h3 style="color: #5865f2; margin-bottom: 15px;">10. Contact Information</h3>
+        <p style="margin-bottom: 15px; line-height: 1.6;">
+            For questions regarding these terms, please contact us through our official Discord server or support channels.
+        </p>
+    </div>
+    
+    <div style="text-align: center; margin-top: 30px;">
+        <a href="{{ url_for('index') }}" class="discord-btn" style="background: #666;">
+            <i class="fas fa-arrow-left"></i>
+            Back to Home
+        </a>
+    </div>
+</div>
+{% endblock %}

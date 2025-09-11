@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <div class="logo">
+        <i class="fas fa-shield-alt"></i> Arrow Industries
+    </div>
+    <div class="subtitle">OAuth Verification System</div>
+    
+    <p style="margin-bottom: 30px; color: #b0b0b0;">
+        Securely link your Discord and ROBLOX accounts for verification.
+    </p>
+    
+    <div class="agreement">
+        By continuing, you agree to our 
+        <a href="{{ url_for('terms') }}" target="_blank">Terms of Service</a> 
+        and 
+        <a href="{{ url_for('privacy') }}" target="_blank">Privacy Policy</a>.
+    </div>
+    
+    <a href="{{ url_for('discord_auth') }}" class="discord-btn">
+        <i class="fab fa-discord"></i>
+        Login with Discord
+    </a>
+</div>
+{% endblock %}

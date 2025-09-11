@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    {% if success %}
+        <div class="logo">
+            <i class="fas fa-check-circle success"></i> Verification Complete
+        </div>
+        <div class="subtitle">Successfully verified your accounts</div>
+        
+        <div class="user-info">
+            <div style="display: flex; justify-content: space-around; margin-bottom: 20px;">
+                <div style="text-align: center;">
+                    <img src="https://cdn.discordapp.com/avatars/{{ data.discord_user.id }}/{{ data.discord_user.avatar }}.png?size=128" 
+                         alt="Discord Avatar" class="user-avatar" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
+                    <p style="font-size: 0.9rem; color: #b0b0b0;">Discord</p>
+                </div>
+                <div style="text-align: center;">
+                    <img src="{{ data.roblox_data.avatar_url or 'https://www.roblox.com/headshot-thumbnail/image?userId=' + data.roblox_data.id|string + '&width=150&height=150&format=png' }}" 
+                         alt="ROBLOX Avatar" class="user-avatar" onerror="this.src='https://images.rbxcdn.com/ae345ef0-64b1-4ae7-9467-b2ec4bd9c3e1/150/150/AvatarHeadshot/Png'">
+                    <p style="font-size: 0.9rem; color: #b0b0b0;">ROBLOX</p>
+                </div>
+            </div>
+            
+            <div class="info-row">
+                <span class="info-label">ROBLOX Username:</span>
+                <span class="info-value">{{ data.roblox_data.username }}</span>
+            </div>
+            {% if data.roblox_data.display_name != data.roblox_data.username %}
+            <div class="info-row">
+                <span class="info-label">ROBLOX Display Name:</span>
+                <span class="info-value">{{ data.roblox_data.display_name }}</span>
+            </div>
+            {% endif %}
+            <div class="info-row">
+                <span class="info-label">ROBLOX ID:</span>
+                <span class="info-value">{{ data.roblox_data.id }}</span>
+            </div>
+            {% if data.roblox_data.created %}
+            <div class="info-row">
+                <span class="info-label">Account Created:</span>
+                <span class="info-value">{{ data.roblox_data.created[:10] }}</span>
+            </div>
+            {% endif %}
+            <div class="info-row">
+                <span class="info-label">Discord Username:</span>
+                <span class="info-value">{{ data.discord_user.global_name or data.discord_user.username }}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Discord ID:</span>
+                <span class="info-value">{{ data.discord_user.id }}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Reverified:</span>
+                <span class="info-value {% if data.is_reverify %}success{% else %}error{% endif %}">
+                    {{ 'true' if data.is_reverify else 'false' }}
+                </span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Banned Status:</span>
+                <span class="info-value {% if data.banned %}error{% else %}success{% endif %}">
+                    {{ 'true' if data.banned else 'false' }}
+                </span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Suspended Status:</span>
+                <span class="info-value {% if data.suspended %}error{% else %}success{% endif %}">
+                    {{ 'true' if data.suspended else 'false' }}
+                </span>
+            </div>
+            {% if data.group_memberships %}
+            <div class="info-row">
+                <span class="info-label">Top Groups:</span>
+                <span class="info-value" style="font-size: 0.9rem;">
+                    {% for group in data.group_memberships %}
+                        {{ group.group.name }}{% if not loop.last %}, {% endif %}
+                    {% endfor %}
+                </span>
+            </div>
+            {% endif %}
+        </div>
+        
+        <p style="margin-top: 20px; color: #00ff88; font-weight: 600;">
+            <i class="fas fa-check"></i> Your accounts have been successfully linked!
+        </p>
+        
+    {% else %}
+        <div class="logo">
+            <i class="fas fa-exclamation-triangle error"></i> Verification Failed
+        </div>
+        <div class="subtitle">An error occurred during verification</div>
+        
+        <div class="user-info" style="background: #2a1a1a; border-left: 4px solid #ff4444;">
+            <p style="color: #ff4444; font-weight: 600; margin-bottom: 15px;">
+                <i class="fas fa-times-circle"></i> Error Details
+            </p>
+            <p style="color: #ffaaaa;">
+                An error occurred while processing your ROBLOX Login verification. Please try again later.
+            </p>
+            {% if error %}
+            <p style="color: #888; font-size: 0.9rem; margin-top: 10px;">
+                Technical details: {{ error }}
+            </p>
+            {% endif %}
+        </div>
+        
+        <a href="{{ url_for('index') }}" class="discord-btn" style="background: #666; margin-top: 20px;">
+            <i class="fas fa-redo"></i>
+            Try Again
+        </a>
+    {% endif %}
+</div>
+{% endblock %}
