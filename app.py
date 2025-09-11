@@ -312,10 +312,9 @@ def privacy():
 def health_check():
     return {'status': 'healthy', 'message': 'OAuth verification service is running'}
 
-@app.before_first_request
-def startup():
-    print("Flask app started successfully!")
-    print(f"Routes registered: {[rule.rule for rule in app.url_map.iter_rules()]}")
+# Remove deprecated before_first_request - use startup logging instead
+print("Flask app initialized successfully!")
+print(f"Available routes: {[rule.rule for rule in app.url_map.iter_rules()]}")
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
