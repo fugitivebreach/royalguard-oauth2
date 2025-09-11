@@ -281,5 +281,11 @@ def terms():
 def privacy():
     return render_template('privacy.html')
 
+@app.route('/health')
+def health_check():
+    return {'status': 'healthy', 'message': 'OAuth verification service is running'}
+
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    port = int(os.environ.get('PORT', 5000))
+    print(f"Starting Flask app on port {port}")
+    app.run(debug=False, host='0.0.0.0', port=port)
