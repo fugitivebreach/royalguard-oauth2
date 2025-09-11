@@ -3,7 +3,6 @@ import requests
 import os
 from urllib.parse import urlencode
 import secrets
-import motor.motor_asyncio
 import asyncio
 from datetime import datetime
 from decouple import config
@@ -22,10 +21,22 @@ ROBLOX_REDIRECT_URI = config('ROBLOX_REDIRECT_URI', default='http://localhost:50
 
 MONGO_URI = config('MONGO_URI')
 
-# MongoDB setup
-client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
-db = client['royalguard']
-verified_users_collection = db['verifiedusers']
+# MongoDB setup - Initialize lazily to avoid startup issues
+verified_users_collection = None
+
+def get_db_collection():
+    global verified_users_collection
+    if verified_users_collection is None:
+        try:
+            import motor.motor_asyncio
+            client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
+            db = client['royalguard']
+            verified_users_collection = db['verifiedusers']
+        except Exception as e:
+            print(f"MongoDB connection error: {e}")
+            # Continue without MongoDB for now
+            pass
+    return verified_users_collection
 
 @app.route('/')
 def index():
@@ -188,48 +199,55 @@ def roblox_callback():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-        existing_verification = loop.run_until_complete(
-            verified_users_collection.find_one({
-                '$or': [
-                    {'_id': int(discord_user['id'])},
-                    {'roblox': int(roblox_id)}
-                ]
-            })
-        )
-        
-        is_reverify = existing_verification is not None
-        
-        # Check for banned/suspended status from existing records
-        banned = False
-        suspended = False
-        if existing_verification:
-            banned = existing_verification.get('banned', False)
-            suspended = existing_verification.get('suspended', False)
+        collection = get_db_collection()
+        if collection is None:
+            # Skip database operations if MongoDB is not available
+            is_reverify = False
+            banned = False
+            suspended = False
         else:
-            # Check all records with this ROBLOX ID for banned/suspended status
-            all_records = loop.run_until_complete(
-                verified_users_collection.find({'roblox': int(roblox_id)}).to_list(None)
+            existing_verification = loop.run_until_complete(
+                collection.find_one({
+                    '$or': [
+                        {'_id': int(discord_user['id'])},
+                        {'roblox': int(roblox_id)}
+                    ]
+                })
             )
-            if all_records:
-                banned = any(record.get('banned', False) for record in all_records)
-                suspended = any(record.get('suspended', False) for record in all_records)
         
-        # Store verification data using bot's schema
-        verification_data = {
-            '_id': int(discord_user['id']),
-            'roblox': int(roblox_id),
-            'banned': banned,
-            'suspended': suspended,
-        }
-        
-        # Upsert verification record
-        loop.run_until_complete(
-            verified_users_collection.replace_one(
-                {'_id': int(discord_user['id'])},
-                verification_data,
-                upsert=True
+            is_reverify = existing_verification is not None
+            
+            # Check for banned/suspended status from existing records
+            banned = False
+            suspended = False
+            if existing_verification:
+                banned = existing_verification.get('banned', False)
+                suspended = existing_verification.get('suspended', False)
+            else:
+                # Check all records with this ROBLOX ID for banned/suspended status
+                all_records = loop.run_until_complete(
+                    collection.find({'roblox': int(roblox_id)}).to_list(None)
+                )
+                if all_records:
+                    banned = any(record.get('banned', False) for record in all_records)
+                    suspended = any(record.get('suspended', False) for record in all_records)
+            
+            # Store verification data using bot's schema
+            verification_data = {
+                '_id': int(discord_user['id']),
+                'roblox': int(roblox_id),
+                'banned': banned,
+                'suspended': suspended,
+            }
+            
+            # Upsert verification record
+            loop.run_until_complete(
+                collection.replace_one(
+                    {'_id': int(discord_user['id'])},
+                    verification_data,
+                    upsert=True
+                )
             )
-        )
         
         loop.close()
         
