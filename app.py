@@ -119,7 +119,7 @@ def discord_callback():
     
     user_data = user_response.json()
     
-    # Store Discord data in session
+    # Store Discord data in session (no database verification without ROBLOX)
     session['discord_user'] = {
         'id': user_data['id'],
         'username': user_data['username'],
@@ -134,6 +134,10 @@ def discord_callback():
 def roblox_auth():
     if 'discord_user' not in session:
         return redirect(url_for('index'))
+    
+    # Check if ROBLOX OAuth is available
+    if not ROBLOX_CLIENT_ID or not ROBLOX_CLIENT_SECRET:
+        return render_template('error.html', error="ROBLOX OAuth2 is temporarily unavailable - pending approval from ROBLOX")
     
     # Generate state for security
     state = secrets.token_urlsafe(32)
