@@ -10,16 +10,33 @@ from decouple import config
 app = Flask(__name__)
 app.secret_key = config('SECRET_KEY', default=secrets.token_hex(32))
 
-# Configuration
-DISCORD_CLIENT_ID = config('DISCORD_CLIENT_ID')
-DISCORD_CLIENT_SECRET = config('DISCORD_CLIENT_SECRET')
-DISCORD_REDIRECT_URI = config('DISCORD_REDIRECT_URI', default='http://localhost:5000/auth/discord/callback')
-
-ROBLOX_CLIENT_ID = config('ROBLOX_CLIENT_ID')
-ROBLOX_CLIENT_SECRET = config('ROBLOX_CLIENT_SECRET')
-ROBLOX_REDIRECT_URI = config('ROBLOX_REDIRECT_URI', default='http://localhost:5000/auth/roblox/callback')
-
-MONGO_URI = config('MONGO_URI')
+# Configuration with error handling
+try:
+    DISCORD_CLIENT_ID = config('DISCORD_CLIENT_ID')
+    DISCORD_CLIENT_SECRET = config('DISCORD_CLIENT_SECRET')
+    DISCORD_REDIRECT_URI = config('DISCORD_REDIRECT_URI', default='http://localhost:5000/auth/discord/callback')
+    
+    ROBLOX_CLIENT_ID = config('ROBLOX_CLIENT_ID', default='')
+    ROBLOX_CLIENT_SECRET = config('ROBLOX_CLIENT_SECRET', default='')
+    ROBLOX_REDIRECT_URI = config('ROBLOX_REDIRECT_URI', default='http://localhost:5000/auth/roblox/callback')
+    
+    MONGO_URI = config('MONGO_URI', default='mongodb://localhost:27017/royalguard')
+    
+    print(f"Configuration loaded successfully")
+    print(f"Discord Client ID: {'Set' if DISCORD_CLIENT_ID else 'Missing'}")
+    print(f"ROBLOX Client ID: {'Set' if ROBLOX_CLIENT_ID else 'Missing'}")
+    print(f"MongoDB URI: {'Set' if MONGO_URI else 'Missing'}")
+    
+except Exception as e:
+    print(f"Configuration error: {e}")
+    # Set defaults to prevent crashes
+    DISCORD_CLIENT_ID = ''
+    DISCORD_CLIENT_SECRET = ''
+    DISCORD_REDIRECT_URI = 'http://localhost:5000/auth/discord/callback'
+    ROBLOX_CLIENT_ID = ''
+    ROBLOX_CLIENT_SECRET = ''
+    ROBLOX_REDIRECT_URI = 'http://localhost:5000/auth/roblox/callback'
+    MONGO_URI = 'mongodb://localhost:27017/royalguard'
 
 # MongoDB setup - Initialize lazily to avoid startup issues
 verified_users_collection = None
@@ -61,6 +78,12 @@ def discord_auth():
 
 @app.route('/auth/discord/callback')
 def discord_callback():
+    print(f"Discord callback received with code: {request.args.get('code')[:10]}...")
+    
+    # Check if Discord credentials are available
+    if not DISCORD_CLIENT_ID or not DISCORD_CLIENT_SECRET:
+        return render_template('error.html', error="Discord OAuth not configured")
+    
     # Verify state parameter
     if request.args.get('state') != session.get('oauth_state'):
         return render_template('error.html', error="Invalid state parameter")
