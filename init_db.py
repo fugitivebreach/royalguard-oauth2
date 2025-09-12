@@ -34,9 +34,6 @@ def init_database():
         indexes = [
             IndexModel([("_id", 1)], unique=True),  # Discord ID (primary key)
             IndexModel([("roblox", 1)], unique=False),  # ROBLOX ID (can have duplicates for re-verification)
-            IndexModel([("discord_username", 1)], unique=False),
-            IndexModel([("roblox_username", 1)], unique=False),
-            IndexModel([("verified_at", -1)], unique=False),  # Most recent first
             IndexModel([("banned", 1)], unique=False),
             IndexModel([("suspended", 1)], unique=False)
         ]
