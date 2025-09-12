@@ -3,9 +3,15 @@ import requests
 import os
 from urllib.parse import urlencode
 import secrets
-import asyncio
 from datetime import datetime
 from decouple import config
+import pymongo
+from pymongo import MongoClient
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.secret_key = config('SECRET_KEY', default=secrets.token_hex(32))
@@ -22,13 +28,13 @@ try:
     
     MONGO_URI = config('MONGO_URI', default='mongodb://localhost:27017/royalguard')
     
-    print(f"Configuration loaded successfully")
-    print(f"Discord Client ID: {'Set' if DISCORD_CLIENT_ID else 'Missing'}")
-    print(f"ROBLOX Client ID: {'Set' if ROBLOX_CLIENT_ID else 'Missing'}")
-    print(f"MongoDB URI: {'Set' if MONGO_URI else 'Missing'}")
+    logger.info("Configuration loaded successfully")
+    logger.info(f"Discord Client ID: {'Set' if DISCORD_CLIENT_ID else 'Missing'}")
+    logger.info(f"ROBLOX Client ID: {'Set' if ROBLOX_CLIENT_ID else 'Missing'}")
+    logger.info(f"MongoDB URI: {'Set' if MONGO_URI else 'Missing'}")
     
 except Exception as e:
-    print(f"Configuration error: {e}")
+    logger.error(f"Configuration error: {e}")
     # Set defaults to prevent crashes
     DISCORD_CLIENT_ID = ''
     DISCORD_CLIENT_SECRET = ''
@@ -38,22 +44,30 @@ except Exception as e:
     ROBLOX_REDIRECT_URI = 'http://localhost:5000/auth/roblox/callback'
     MONGO_URI = 'mongodb://localhost:27017/royalguard'
 
-# MongoDB setup - Initialize lazily to avoid startup issues
+# MongoDB setup - Use synchronous pymongo for Flask compatibility
+mongo_client = None
 verified_users_collection = None
 
 def get_db_collection():
-    global verified_users_collection
+    global mongo_client, verified_users_collection
     if verified_users_collection is None:
         try:
-            import motor.motor_asyncio
-            client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
-            db = client['royalguard']
+            mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+            # Test the connection
+            mongo_client.admin.command('ping')
+            db = mongo_client['royalguard']
             verified_users_collection = db['verifiedusers']
+            logger.info("MongoDB connection established successfully")
         except Exception as e:
-            print(f"MongoDB connection error: {e}")
-            # Continue without MongoDB for now
-            pass
+            logger.error(f"MongoDB connection error: {e}")
+            verified_users_collection = None
     return verified_users_collection
+
+def close_db_connection():
+    global mongo_client
+    if mongo_client:
+        mongo_client.close()
+        logger.info("MongoDB connection closed")
 
 @app.route('/')
 def index():
@@ -223,25 +237,26 @@ def roblox_callback():
     
     # Check if user was previously verified (reverification)
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
         collection = get_db_collection()
         if collection is None:
             # Skip database operations if MongoDB is not available
+            logger.warning("MongoDB not available, skipping database operations")
             is_reverify = False
             banned = False
             suspended = False
         else:
-            existing_verification = loop.run_until_complete(
-                collection.find_one({
-                    '$or': [
-                        {'_id': int(discord_user['id'])},
-                        {'roblox': int(roblox_id)}
-                    ]
-                })
-            )
-        
+            # Convert IDs to integers for database queries
+            discord_id = int(discord_user['id'])
+            roblox_id_int = int(roblox_id)
+            
+            # Check for existing verification
+            existing_verification = collection.find_one({
+                '$or': [
+                    {'_id': discord_id},
+                    {'roblox': roblox_id_int}
+                ]
+            })
+            
             is_reverify = existing_verification is not None
             
             # Check for banned/suspended status from existing records
@@ -250,36 +265,47 @@ def roblox_callback():
             if existing_verification:
                 banned = existing_verification.get('banned', False)
                 suspended = existing_verification.get('suspended', False)
+                logger.info(f"Found existing verification for Discord ID {discord_id}")
             else:
                 # Check all records with this ROBLOX ID for banned/suspended status
-                all_records = loop.run_until_complete(
-                    collection.find({'roblox': int(roblox_id)}).to_list(None)
-                )
+                all_records = list(collection.find({'roblox': roblox_id_int}))
                 if all_records:
                     banned = any(record.get('banned', False) for record in all_records)
                     suspended = any(record.get('suspended', False) for record in all_records)
+                    logger.info(f"Found {len(all_records)} existing records for ROBLOX ID {roblox_id_int}")
             
             # Store verification data using bot's schema
             verification_data = {
-                '_id': int(discord_user['id']),
-                'roblox': int(roblox_id),
+                '_id': discord_id,
+                'roblox': roblox_id_int,
                 'banned': banned,
                 'suspended': suspended,
+                'verified_at': datetime.utcnow(),
+                'discord_username': discord_user.get('username', ''),
+                'roblox_username': roblox_username or ''
             }
             
             # Upsert verification record
-            loop.run_until_complete(
-                collection.replace_one(
-                    {'_id': int(discord_user['id'])},
-                    verification_data,
-                    upsert=True
-                )
+            result = collection.replace_one(
+                {'_id': discord_id},
+                verification_data,
+                upsert=True
             )
+            
+            if result.upserted_id:
+                logger.info(f"Created new verification record for Discord ID {discord_id}")
+            else:
+                logger.info(f"Updated existing verification record for Discord ID {discord_id}")
         
-        loop.close()
-        
+    except pymongo.errors.PyMongoError as e:
+        logger.error(f"MongoDB error during verification: {e}")
+        return render_template('verification_result.html', success=False, error=f"Database error: {str(e)}")
+    except ValueError as e:
+        logger.error(f"Data conversion error: {e}")
+        return render_template('verification_result.html', success=False, error="Invalid user ID format")
     except Exception as e:
-        return render_template('verification_result.html', success=False, error="Database error occurred")
+        logger.error(f"Unexpected error during verification: {e}")
+        return render_template('verification_result.html', success=False, error="An unexpected error occurred during verification")
     
     # Prepare data for template
     result_data = {
@@ -310,18 +336,47 @@ def privacy():
 
 @app.route('/health')
 def health_check():
-    return {'status': 'healthy', 'message': 'OAuth verification service is running'}
+    health_status = {
+        'status': 'healthy',
+        'message': 'OAuth verification service is running',
+        'database': 'disconnected',
+        'timestamp': datetime.utcnow().isoformat()
+    }
+    
+    # Test database connection
+    try:
+        collection = get_db_collection()
+        if collection is not None:
+            # Test with a simple ping
+            collection.database.client.admin.command('ping')
+            health_status['database'] = 'connected'
+            
+            # Get collection stats
+            stats = collection.database.command('collStats', 'verifiedusers')
+            health_status['database_stats'] = {
+                'document_count': stats.get('count', 0),
+                'size_bytes': stats.get('size', 0)
+            }
+    except Exception as e:
+        health_status['database'] = f'error: {str(e)}'
+        logger.error(f"Health check database error: {e}")
+    
+    return jsonify(health_status)
 
 @app.route('/test')
 def test_route():
     return "Railway app is working! Routes are accessible."
 
+# Add cleanup handler for graceful shutdown
+import atexit
+atexit.register(close_db_connection)
+
 # Remove deprecated before_first_request - use startup logging instead
-print("Flask app initialized successfully!")
-print(f"Available routes: {[rule.rule for rule in app.url_map.iter_rules()]}")
+logger.info("Flask app initialized successfully!")
+logger.info(f"Available routes: {[rule.rule for rule in app.url_map.iter_rules()]}")
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    print(f"Starting Flask app on port {port}")
-    print(f"Available routes: {[rule.rule for rule in app.url_map.iter_rules()]}")
+    logger.info(f"Starting Flask app on port {port}")
+    logger.info(f"Available routes: {[rule.rule for rule in app.url_map.iter_rules()]}")
     app.run(debug=False, host='0.0.0.0', port=port)
