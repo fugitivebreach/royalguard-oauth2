@@ -1,26 +1,256 @@
-{% extends "base.html" %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <i class="fas fa-arrow-right"></i>
+                <span>Arrow API</span>
+            </div>
+            <div class="nav-links">
+                <a href="/" class="nav-link">Home</a>
+                <a href="/docs" class="nav-link">Documentation</a>
+                <% if (typeof user !== 'undefined' && user) { %>
+                    <a href="/dashboard" class="nav-link">Dashboard</a>
+                    <a href="/verify" class="nav-link">Verify</a>
+                    <div class="user-menu">
+                        <img src="https://cdn.discordapp.com/avatars/<%= user.discordId %>/<%= user.avatar %>.png" alt="Avatar" class="user-avatar">
+                        <span class="username"><%= user.username %></span>
+                        <a href="/auth/logout" class="logout-btn">
+                            <i class="fas fa-sign-out-alt"></i>
+                        </a>
+                    </div>
+                <% } else { %>
+                    <a href="/login" class="login-btn">
+                        <i class="fab fa-discord"></i>
+                        Login with Discord
+                    </a>
+                <% } %>
+            </div>
+        </div>
+    </nav>
 
-{% block content %}
-<div class="card">
-    <div class="logo">
-        <i class="fas fa-shield-alt"></i> Arrow Industries
+    <main class="main-content">
+        <div class="container">
+            <div class="hero-section text-center">
+                <h1 class="hero-title">Arrow API</h1>
+                <p class="hero-subtitle">Powerful Roblox Group Membership API</p>
+                <p class="hero-description">
+                    Check Roblox group membership with lightning-fast responses. 
+                    Secure, reliable, and easy to integrate into your applications.
+                </p>
+        <div class="hero-actions">
+            <% if (typeof user !== 'undefined' && user) { %>
+                <a href="/dashboard" class="btn btn-primary">
+                    <i class="fas fa-tachometer-alt"></i>
+                    Go to Dashboard
+                </a>
+            <% } else { %>
+                <a href="/login" class="btn btn-primary">
+                    <i class="fab fa-discord"></i>
+                    Get Started
+                </a>
+            <% } %>
+            <a href="/docs" class="btn">
+                <i class="fas fa-book"></i>
+                Documentation
+            </a>
+        </div>
     </div>
-    <div class="subtitle">OAuth Verification System</div>
-    
-    <p style="margin-bottom: 30px; color: #b0b0b0;">
-        Securely link your Discord and ROBLOX accounts for verification.
-    </p>
-    
-    <div class="agreement">
-        By continuing, you agree to our 
-        <a href="{{ url_for('terms') }}" target="_blank">Terms of Service</a> 
-        and 
-        <a href="{{ url_for('privacy') }}" target="_blank">Privacy Policy</a>.
+
+    <div class="features-section">
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <i class="fas fa-bolt"></i>
+                </div>
+                <h3>Lightning Fast</h3>
+                <p>Get group membership data in milliseconds with our optimized API endpoints.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <i class="fas fa-shield-alt"></i>
+                </div>
+                <h3>Secure & Reliable</h3>
+                <p>API key authentication and MongoDB storage ensure your data is safe and accessible.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <i class="fas fa-code"></i>
+                </div>
+                <h3>Developer Friendly</h3>
+                <p>Simple REST API with comprehensive documentation and code examples in multiple languages.</p>
+            </div>
+        </div>
     </div>
+
+    <div class="example-section">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Quick Example</h2>
+                <p class="card-subtitle">Check if a user is in a Roblox group</p>
+            </div>
+            <div class="language-tabs">
+                <button class="tab-button active" onclick="showTab('curl')">cURL</button>
+                <button class="tab-button" onclick="showTab('javascript')">JavaScript</button>
+                <button class="tab-button" onclick="showTab('python')">Python</button>
+            </div>
+            <div id="curl" class="tab-content active">
+                <div class="code-block">
+                    <pre><code>curl -X GET "https://arrow-api.up.railway.app/123456789/987654321" \
+  -H "api-key: your-api-key-here"</code></pre>
+                </div>
+            </div>
+            <div id="javascript" class="tab-content">
+                <div class="code-block">
+                    <pre><code>const response = await fetch('https://arrow-api.up.railway.app/123456789/987654321', {
+  headers: {
+    'api-key': 'your-api-key-here'
+  }
+});
+const data = await response.json();</code></pre>
+                </div>
+            </div>
+            <div id="python" class="tab-content">
+                <div class="code-block">
+                    <pre><code>import requests
+
+response = requests.get(
+    'https://arrow-api.up.railway.app/123456789/987654321',
+    headers={'api-key': 'your-api-key-here'}
+)
+data = response.json()</code></pre>
+                </div>
+            </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <div class="footer-container">
+            <div class="footer-section">
+                <h4>Arrow API</h4>
+                <p>Powerful Roblox group membership API</p>
+            </div>
+            <div class="footer-section">
+                <h4>Links</h4>
+                <a href="/docs">Documentation</a>
+                <a href="/docs/auth">Authentication</a>
+                <a href="https://github.com" target="_blank">GitHub</a>
+            </div>
+            <div class="footer-section">
+                <h4>Support</h4>
+                <a href="https://discord.gg" target="_blank">Discord Server</a>
+                <a href="mailto:support@arrowapi.com">Contact</a>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2024 Arrow API. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="/js/main.js"></script>
+
+<style>
+.hero-section {
+    padding: 4rem 0;
+    margin-bottom: 4rem;
+}
+
+.hero-title {
+    font-size: 4rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    background: linear-gradient(135deg, #ffffff 0%, #cccccc 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.hero-subtitle {
+    font-size: 1.5rem;
+    color: #cccccc;
+    margin-bottom: 1rem;
+}
+
+.hero-description {
+    font-size: 1.1rem;
+    color: #aaaaaa;
+    max-width: 600px;
+    margin: 0 auto 2rem;
+}
+
+.hero-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.features-section {
+    margin-bottom: 4rem;
+}
+
+.features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2rem;
+}
+
+.feature-card {
+    background-color: #000000;
+    border: 1px solid #ffffff;
+    border-radius: 8px;
+    padding: 2rem;
+    text-align: center;
+    transition: transform 0.3s ease;
+}
+
+.feature-card:hover {
+    transform: translateY(-5px);
+}
+
+.feature-icon {
+    font-size: 3rem;
+    color: #ffffff;
+    margin-bottom: 1rem;
+}
+
+.feature-card h3 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.feature-card p {
+    color: #cccccc;
+}
+
+.example-section {
+    margin-bottom: 4rem;
+}
+
+@media (max-width: 768px) {
+    .hero-title {
+        font-size: 2.5rem;
+    }
     
-    <a href="{{ url_for('discord_auth') }}" class="discord-btn">
-        <i class="fab fa-discord"></i>
-        Login with Discord
-    </a>
-</div>
-{% endblock %}
+    .hero-actions {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .features-grid {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+</body>
+</html>

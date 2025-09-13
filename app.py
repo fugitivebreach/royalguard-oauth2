@@ -8,6 +8,9 @@ from decouple import config
 import pymongo
 from pymongo import MongoClient
 import logging
+import asyncio
+import aiohttp
+import json
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -28,10 +31,19 @@ try:
     
     MONGO_URI = config('MONGO_URI', default='mongodb://localhost:27017/royalguard')
     
+    # Discord logging configuration
+    DISCORD_BOT_TOKEN = config('DISCORD_BOT_TOKEN', default='')
+    VERIFICATION_LOG_CHANNEL_ID = config('VERIFICATION_LOG_CHANNEL_ID', default='1414357206039662706')
+    
+    # IP Info API configuration
+    IPINFO_API_TOKEN = config('IPINFO_API_TOKEN', default='')
+    
     logger.info("Configuration loaded successfully")
     logger.info(f"Discord Client ID: {'Set' if DISCORD_CLIENT_ID else 'Missing'}")
     logger.info(f"ROBLOX Client ID: {'Set' if ROBLOX_CLIENT_ID else 'Missing'}")
     logger.info(f"MongoDB URI: {'Set' if MONGO_URI else 'Missing'}")
+    logger.info(f"Discord Bot Token: {'Set' if DISCORD_BOT_TOKEN else 'Missing'}")
+    logger.info(f"IPInfo API Token: {'Set' if IPINFO_API_TOKEN else 'Missing'}")
     
 except Exception as e:
     logger.error(f"Configuration error: {e}")
@@ -43,6 +55,9 @@ except Exception as e:
     ROBLOX_CLIENT_SECRET = ''
     ROBLOX_REDIRECT_URI = 'http://localhost:5000/auth/roblox/callback'
     MONGO_URI = 'mongodb://localhost:27017/royalguard'
+    DISCORD_BOT_TOKEN = ''
+    VERIFICATION_LOG_CHANNEL_ID = '1414357206039662706'
+    IPINFO_API_TOKEN = ''
 
 # MongoDB setup - Use synchronous pymongo for Flask compatibility
 mongo_client = None
@@ -68,6 +83,135 @@ def close_db_connection():
     if mongo_client:
         mongo_client.close()
         logger.info("MongoDB connection closed")
+
+async def get_ip_info(ip_address):
+    """Get IP information using ipinfo.io API"""
+    try:
+        if IPINFO_API_TOKEN:
+            url = f"https://ipinfo.io/{ip_address}/json?token={IPINFO_API_TOKEN}"
+        else:
+            url = f"https://ipinfo.io/{ip_address}/json"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return {
+                        'ip': data.get('ip', ip_address),
+                        'hostname': data.get('hostname', 'N/A'),
+                        'city': data.get('city', 'N/A'),
+                        'region': data.get('region', 'N/A'),
+                        'country': data.get('country', 'N/A'),
+                        'loc': data.get('loc', 'N/A'),
+                        'org': data.get('org', 'N/A'),
+                        'postal': data.get('postal', 'N/A'),
+                        'timezone': data.get('timezone', 'N/A')
+                    }
+    except Exception as e:
+        logger.error(f"Error getting IP info: {e}")
+    
+    return {
+        'ip': ip_address,
+        'hostname': 'N/A',
+        'city': 'N/A',
+        'region': 'N/A',
+        'country': 'N/A',
+        'loc': 'N/A',
+        'org': 'N/A',
+        'postal': 'N/A',
+        'timezone': 'N/A'
+    }
+
+def get_client_ip():
+    """Get the real client IP address"""
+    # Check for forwarded headers first
+    if request.headers.get('X-Forwarded-For'):
+        # Get the first IP in the chain (original client)
+        return request.headers.get('X-Forwarded-For').split(',')[0].strip()
+    elif request.headers.get('X-Real-IP'):
+        return request.headers.get('X-Real-IP')
+    elif request.headers.get('CF-Connecting-IP'):  # Cloudflare
+        return request.headers.get('CF-Connecting-IP')
+    else:
+        return request.remote_addr
+
+async def send_verification_log(discord_user, roblox_data, ip_info, is_reverify=False):
+    """Send verification log to Discord channel"""
+    try:
+        if not DISCORD_BOT_TOKEN or not VERIFICATION_LOG_CHANNEL_ID:
+            logger.warning("Discord logging not configured - skipping log")
+            return
+        
+        # Parse location data
+        location_parts = ip_info.get('loc', 'N/A').split(',') if ip_info.get('loc') != 'N/A' else ['N/A', 'N/A']
+        latitude = location_parts[0] if len(location_parts) > 0 else 'N/A'
+        longitude = location_parts[1] if len(location_parts) > 1 else 'N/A'
+        
+        # Create embed data
+        embed_data = {
+            "title": "Arrow Verification Logs",
+            "description": f"Viewing verification log for <@{discord_user['id']}>",
+            "color": 0x2F3136,  # discord.Color.dark_blue() equivalent
+            "fields": [
+                {
+                    "name": "Verification Information",
+                    "value": (
+                        f"Discord: <@{discord_user['id']}> | {discord_user['id']} | {discord_user['username']}\n"
+                        f"ROBLOX: {roblox_data.get('username', 'N/A')} | {roblox_data.get('id', 'N/A')} | "
+                        f"https://www.roblox.com/users/{roblox_data.get('id', '0')}/profile\n"
+                        f"Method: OAuth2"
+                    ),
+                    "inline": False
+                },
+                {
+                    "name": "Data",
+                    "value": (
+                        f"Association: {ip_info.get('org', 'N/A')}\n"
+                        f"Country Code: {ip_info.get('country', 'N/A')}\n"
+                        f"Internet Service Provider: {ip_info.get('org', 'N/A')}\n"
+                        f"Latitude: {latitude}\n"
+                        f"Longitude: {longitude}\n"
+                        f"Region Name: {ip_info.get('region', 'N/A')}\n"
+                        f"IP: {ip_info.get('ip', 'N/A')}"
+                    ),
+                    "inline": False
+                }
+            ],
+            "timestamp": datetime.now(datetime.timezone.utc).isoformat()
+        }
+        
+        # Add author field
+        if discord_user.get('avatar'):
+            avatar_url = f"https://cdn.discordapp.com/avatars/{discord_user['id']}/{discord_user['avatar']}.png"
+        else:
+            avatar_url = f"https://cdn.discordapp.com/embed/avatars/{int(discord_user['id']) % 5}.png"
+        
+        embed_data["author"] = {
+            "name": discord_user.get('global_name') or discord_user['username'],
+            "icon_url": avatar_url
+        }
+        
+        # Send to Discord using bot token
+        headers = {
+            'Authorization': f'Bot {DISCORD_BOT_TOKEN}',
+            'Content-Type': 'application/json'
+        }
+        
+        payload = {
+            'embeds': [embed_data]
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            url = f"https://discord.com/api/v10/channels/{VERIFICATION_LOG_CHANNEL_ID}/messages"
+            async with session.post(url, headers=headers, json=payload) as response:
+                if response.status == 200:
+                    logger.info(f"Successfully sent verification log for Discord ID {discord_user['id']}")
+                else:
+                    error_text = await response.text()
+                    logger.error(f"Failed to send Discord log: {response.status} - {error_text}")
+                    
+    except Exception as e:
+        logger.error(f"Error sending verification log: {e}")
 
 @app.route('/')
 def index():
@@ -279,10 +423,7 @@ def roblox_callback():
                 '_id': discord_id,
                 'roblox': roblox_id_int,
                 'banned': banned,
-                'suspended': suspended,
-                'verified_at': datetime.utcnow(),
-                'discord_username': discord_user.get('username', ''),
-                'roblox_username': roblox_username or ''
+                'suspended': suspended
             }
             
             # Upsert verification record
@@ -306,6 +447,27 @@ def roblox_callback():
     except Exception as e:
         logger.error(f"Unexpected error during verification: {e}")
         return render_template('verification_result.html', success=False, error="An unexpected error occurred during verification")
+    
+    # Get client IP and IP information for logging
+    client_ip = get_client_ip()
+    
+    # Get IP information asynchronously
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        ip_info = loop.run_until_complete(get_ip_info(client_ip))
+        
+        # Send verification log to Discord
+        roblox_log_data = {
+            'id': roblox_id,
+            'username': roblox_username
+        }
+        loop.run_until_complete(send_verification_log(discord_user, roblox_log_data, ip_info, is_reverify))
+        loop.close()
+        
+        logger.info(f"Verification logged for Discord ID {discord_user['id']} with IP {client_ip}")
+    except Exception as e:
+        logger.error(f"Error during IP collection or logging: {e}")
     
     # Prepare data for template
     result_data = {
