@@ -21,29 +21,26 @@
         </div>
     </div>
     
-    <div class="redirect-info">
-        <p style="margin-bottom: 15px;">
-            <i class="fas fa-info-circle"></i>
-            In <span class="countdown" id="countdown">5</span> seconds, you'll be redirected to ROBLOX OAuth2 to verify your ROBLOX account.
+    <div class="redirect-info" style="background: #2a2a1a; border-left: 4px solid #ffa500;">
+        <p style="margin-bottom: 15px; color: #ffa500;">
+            <i class="fas fa-clock"></i>
+            ROBLOX OAuth2 verification is temporarily unavailable while pending approval from ROBLOX.
         </p>
-        <p style="font-size: 0.9rem; color: #888;">
-            If the redirect doesn't work, <a href="{{ url_for('roblox_auth') }}" style="color: #00a2ff;">click here</a>.
+        <p style="font-size: 0.9rem; color: #888; margin-bottom: 15px;">
+            Your Discord account has been successfully authenticated, but full verification requires ROBLOX OAuth2 approval.
+        </p>
+        <p style="font-size: 0.9rem; color: #b0b0b0;">
+            <strong>Status:</strong> Discord ✅ | ROBLOX ⏳ (Pending Review)
+        </p>
+    </div>
+    
+    <div style="margin-top: 20px;">
+        <p style="color: #00ff88; font-weight: 600;">
+            <i class="fas fa-check"></i> Discord verification complete!
+        </p>
+        <p style="color: #888; font-size: 0.9rem; margin-top: 10px;">
+            You will be notified when full ROBLOX verification becomes available.
         </p>
     </div>
 </div>
-
-<script>
-let countdown = 5;
-const countdownElement = document.getElementById('countdown');
-
-const timer = setInterval(() => {
-    countdown--;
-    countdownElement.textContent = countdown;
-    
-    if (countdown <= 0) {
-        clearInterval(timer);
-        window.location.href = "{{ url_for('roblox_auth') }}";
-    }
-}, 1000);
-</script>
 {% endblock %}
