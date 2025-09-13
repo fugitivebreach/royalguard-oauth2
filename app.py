@@ -295,7 +295,7 @@ def roblox_auth():
     
     # Check if ROBLOX OAuth is available
     if not ROBLOX_CLIENT_ID or not ROBLOX_CLIENT_SECRET:
-        return render_template('error.html', error="ROBLOX OAuth2 is temporarily unavailable - pending approval from ROBLOX")
+        return render_template('error.html', error="ROBLOX OAuth2 credentials not configured. Please contact an administrator.")
     
     # Generate state for security
     state = secrets.token_urlsafe(32)
