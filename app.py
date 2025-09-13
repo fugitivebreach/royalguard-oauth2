@@ -177,7 +177,7 @@ async def send_verification_log(discord_user, roblox_data, ip_info, is_reverify=
                     "inline": False
                 }
             ],
-            "timestamp": datetime.now(datetime.timezone.utc).isoformat()
+            "timestamp": datetime.utcnow().isoformat()
         }
         
         # Add author field
