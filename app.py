@@ -151,7 +151,7 @@ async def send_verification_log(discord_user, roblox_data, ip_info, is_reverify=
         embed_data = {
             "title": "Arrow Verification Logs",
             "description": f"Viewing verification log for <@{discord_user['id']}>",
-            "color": 0x2F3136,  # discord.Color.dark_blue() equivalent
+            "color": 0x2E4F8E,  # discord.Color.blue() equivalent
             "fields": [
                 {
                     "name": "Verification Information",
