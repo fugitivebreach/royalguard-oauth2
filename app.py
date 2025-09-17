@@ -67,9 +67,30 @@ def get_db_collection():
     global mongo_client, verified_users_collection
     if verified_users_collection is None:
         try:
-            mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-            # Test the connection
-            mongo_client.admin.command('ping')
+            # Enhanced MongoDB connection with replica set configuration
+            mongo_client = MongoClient(
+                MONGO_URI, 
+                serverSelectionTimeoutMS=30000,  # Increased timeout
+                connectTimeoutMS=20000,
+                socketTimeoutMS=20000,
+                retryWrites=True,
+                w='majority',
+                readPreference='primaryPreferred',  # Allow reading from secondary if primary unavailable
+                maxPoolSize=10,
+                minPoolSize=1
+            )
+            # Test the connection with retry logic
+            for attempt in range(3):
+                try:
+                    mongo_client.admin.command('ping')
+                    break
+                except Exception as retry_e:
+                    if attempt == 2:  # Last attempt
+                        raise retry_e
+                    logger.warning(f"Connection attempt {attempt + 1} failed, retrying...")
+                    import time
+                    time.sleep(2)
+            
             db = mongo_client['royalguard']
             verified_users_collection = db['verifiedusers']
             logger.info("MongoDB connection established successfully")
@@ -426,21 +447,37 @@ def roblox_callback():
                 'suspended': suspended
             }
             
-            # Upsert verification record
-            result = collection.replace_one(
-                {'_id': discord_id},
-                verification_data,
-                upsert=True
-            )
+            # Upsert verification record with retry logic
+            max_retries = 3
+            for retry_attempt in range(max_retries):
+                try:
+                    result = collection.replace_one(
+                        {'_id': discord_id},
+                        verification_data,
+                        upsert=True
+                    )
+                    break  # Success, exit retry loop
+                except pymongo.errors.ServerSelectionTimeoutError:
+                    if retry_attempt == max_retries - 1:  # Last attempt
+                        raise
+                    logger.warning(f"Database operation retry {retry_attempt + 1}/{max_retries}")
+                    import time
+                    time.sleep(2)
             
             if result.upserted_id:
                 logger.info(f"Created new verification record for Discord ID {discord_id}")
             else:
                 logger.info(f"Updated existing verification record for Discord ID {discord_id}")
         
+    except pymongo.errors.ServerSelectionTimeoutError as e:
+        logger.error(f"MongoDB server selection timeout: {e}")
+        return render_template('verification_result.html', success=False, error="Database connection timeout. Please try again later.")
+    except pymongo.errors.ConnectionFailure as e:
+        logger.error(f"MongoDB connection failure: {e}")
+        return render_template('verification_result.html', success=False, error="Database connection failed. Please try again later.")
     except pymongo.errors.PyMongoError as e:
         logger.error(f"MongoDB error during verification: {e}")
-        return render_template('verification_result.html', success=False, error=f"Database error: {str(e)}")
+        return render_template('verification_result.html', success=False, error="Database error. Please try again later.")
     except ValueError as e:
         logger.error(f"Data conversion error: {e}")
         return render_template('verification_result.html', success=False, error="Invalid user ID format")
