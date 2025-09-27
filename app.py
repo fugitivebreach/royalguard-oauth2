@@ -257,7 +257,20 @@ def discord_auth():
 
 @app.route('/auth/discord/callback')
 def discord_callback():
-    print(f"Discord callback received with code: {request.args.get('code')[:10]}...")
+    # Check for OAuth errors first
+    error = request.args.get('error')
+    if error:
+        error_description = request.args.get('error_description', 'Unknown error')
+        print(f"Discord OAuth error: {error} - {error_description}")
+        return render_template('error.html', error=f"Discord OAuth error: {error_description}")
+    
+    # Get the authorization code
+    code = request.args.get('code')
+    if not code:
+        print("Discord callback received with no code parameter")
+        return render_template('error.html', error="No authorization code received")
+    
+    print(f"Discord callback received with code: {code[:10]}...")
     
     # Check if Discord credentials are available
     if not DISCORD_CLIENT_ID or not DISCORD_CLIENT_SECRET:
@@ -266,10 +279,6 @@ def discord_callback():
     # Verify state parameter
     if request.args.get('state') != session.get('oauth_state'):
         return render_template('error.html', error="Invalid state parameter")
-    
-    code = request.args.get('code')
-    if not code:
-        return render_template('error.html', error="No authorization code received")
     
     # Exchange code for access token
     token_data = {
