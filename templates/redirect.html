@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Error - Royal Guard OAuth2</title>
+    <title>Redirecting - Royal Guard OAuth2</title>
     <style>
         * {
             margin: 0;
@@ -43,27 +43,61 @@
             font-weight: 600;
             margin-bottom: 20px;
             letter-spacing: 1px;
-            color: #ef4444;
         }
         
         .message {
             font-size: 16px;
             color: #cccccc;
-            line-height: 1.6;
+            margin-bottom: 30px;
         }
         
-        .error-icon {
-            font-size: 64px;
-            margin-bottom: 20px;
+        .countdown {
+            font-size: 48px;
+            font-weight: 700;
+            color: #ffffff;
+            margin: 20px 0;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #555555;
+            border-top-color: #ffffff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <img src="/static/RoyalGuardLogo.png" alt="Royal Guard Logo" class="logo">
-        <div class="error-icon">⚠️</div>
-        <h1>ERROR</h1>
-        <div class="message">{{ message }}</div>
+        <h1>ROYAL GUARD OAUTH2 PAGE</h1>
+        
+        <div class="message">
+            You'll be redirected in <span id="countdown">5</span> seconds...
+        </div>
+        
+        <div class="spinner"></div>
     </div>
+    
+    <script>
+        let seconds = 5;
+        const countdownElement = document.getElementById('countdown');
+        
+        const interval = setInterval(() => {
+            seconds--;
+            countdownElement.textContent = seconds;
+            
+            if (seconds <= 0) {
+                clearInterval(interval);
+                window.location.href = '/continue/{{ session_id }}';
+            }
+        }, 1000);
+    </script>
 </body>
 </html>

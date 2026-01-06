@@ -1,590 +1,181 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify
-import requests
-import os
-from urllib.parse import urlencode
-import secrets
-from datetime import datetime
-from decouple import config
-import pymongo
-from pymongo import MongoClient
-import logging
-import asyncio
-import aiohttp
-import json
+"""
+Royal Guard OAuth2 Verification Server
+Railway Deployment
+"""
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from flask import Flask, render_template, request, redirect, session, jsonify
+import requests
+import secrets
+import time
+import os
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
-app.secret_key = config('SECRET_KEY', default=secrets.token_hex(32))
+app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 
-# Configuration with error handling
-try:
-    DISCORD_CLIENT_ID = config('DISCORD_CLIENT_ID')
-    DISCORD_CLIENT_SECRET = config('DISCORD_CLIENT_SECRET')
-    DISCORD_REDIRECT_URI = config('DISCORD_REDIRECT_URI', default='http://localhost:5000/auth/discord/callback')
-    
-    ROBLOX_CLIENT_ID = config('ROBLOX_CLIENT_ID', default='')
-    ROBLOX_CLIENT_SECRET = config('ROBLOX_CLIENT_SECRET', default='')
-    ROBLOX_REDIRECT_URI = config('ROBLOX_REDIRECT_URI', default='http://localhost:5000/auth/roblox/callback')
-    
-    MONGO_URI = config('MONGO_URI', default='mongodb://localhost:27017/royalguard')
-    
-    # Discord logging configuration
-    DISCORD_BOT_TOKEN = config('DISCORD_BOT_TOKEN', default='')
-    VERIFICATION_LOG_CHANNEL_ID = config('VERIFICATION_LOG_CHANNEL_ID', default='1414357206039662706')
-    
-    # IP Info API configuration
-    IPINFO_API_TOKEN = config('IPINFO_API_TOKEN', default='')
-    
-    logger.info("Configuration loaded successfully")
-    logger.info(f"Discord Client ID: {'Set' if DISCORD_CLIENT_ID else 'Missing'}")
-    logger.info(f"ROBLOX Client ID: {'Set' if ROBLOX_CLIENT_ID else 'Missing'}")
-    logger.info(f"MongoDB URI: {'Set' if MONGO_URI else 'Missing'}")
-    logger.info(f"Discord Bot Token: {'Set' if DISCORD_BOT_TOKEN else 'Missing'}")
-    logger.info(f"IPInfo API Token: {'Set' if IPINFO_API_TOKEN else 'Missing'}")
-    
-except Exception as e:
-    logger.error(f"Configuration error: {e}")
-    # Set defaults to prevent crashes
-    DISCORD_CLIENT_ID = ''
-    DISCORD_CLIENT_SECRET = ''
-    DISCORD_REDIRECT_URI = 'http://localhost:5000/auth/discord/callback'
-    ROBLOX_CLIENT_ID = ''
-    ROBLOX_CLIENT_SECRET = ''
-    ROBLOX_REDIRECT_URI = 'http://localhost:5000/auth/roblox/callback'
-    MONGO_URI = 'mongodb://localhost:27017/royalguard'
-    DISCORD_BOT_TOKEN = ''
-    VERIFICATION_LOG_CHANNEL_ID = '1414357206039662706'
-    IPINFO_API_TOKEN = ''
+# OAuth2 Configuration (set these in Railway environment variables)
+ROBLOX_CLIENT_ID = os.environ.get('ROBLOX_CLIENT_ID')
+ROBLOX_CLIENT_SECRET = os.environ.get('ROBLOX_CLIENT_SECRET')
+REDIRECT_URI = os.environ.get('REDIRECT_URI', 'http://localhost:5000')
 
-# MongoDB setup - Use synchronous pymongo for Flask compatibility
-mongo_client = None
-verified_users_collection = None
+# In-memory storage for verification sessions (use Redis/DB in production)
+verification_sessions = {}
+completed_verifications = {}
 
-def get_db_collection():
-    global mongo_client, verified_users_collection
-    if verified_users_collection is None:
-        try:
-            # Enhanced MongoDB connection with replica set configuration
-            mongo_client = MongoClient(
-                MONGO_URI, 
-                serverSelectionTimeoutMS=30000,  # Increased timeout
-                connectTimeoutMS=20000,
-                socketTimeoutMS=20000,
-                retryWrites=True,
-                w='majority',
-                readPreference='primaryPreferred',  # Allow reading from secondary if primary unavailable
-                maxPoolSize=10,
-                minPoolSize=1
-            )
-            # Test the connection with retry logic
-            for attempt in range(3):
-                try:
-                    mongo_client.admin.command('ping')
-                    break
-                except Exception as retry_e:
-                    if attempt == 2:  # Last attempt
-                        raise retry_e
-                    logger.warning(f"Connection attempt {attempt + 1} failed, retrying...")
-                    import time
-                    time.sleep(2)
-            
-            db = mongo_client['royalguard']
-            verified_users_collection = db['verifiedusers']
-            logger.info("MongoDB connection established successfully")
-        except Exception as e:
-            logger.error(f"MongoDB connection error: {e}")
-            verified_users_collection = None
-    return verified_users_collection
-
-def close_db_connection():
-    global mongo_client
-    if mongo_client:
-        mongo_client.close()
-        logger.info("MongoDB connection closed")
-
-async def get_ip_info(ip_address):
-    """Get IP information using ipinfo.io API"""
-    try:
-        if IPINFO_API_TOKEN:
-            url = f"https://ipinfo.io/{ip_address}/json?token={IPINFO_API_TOKEN}"
-        else:
-            url = f"https://ipinfo.io/{ip_address}/json"
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return {
-                        'ip': data.get('ip', ip_address),
-                        'hostname': data.get('hostname', 'N/A'),
-                        'city': data.get('city', 'N/A'),
-                        'region': data.get('region', 'N/A'),
-                        'country': data.get('country', 'N/A'),
-                        'loc': data.get('loc', 'N/A'),
-                        'org': data.get('org', 'N/A'),
-                        'postal': data.get('postal', 'N/A'),
-                        'timezone': data.get('timezone', 'N/A')
-                    }
-    except Exception as e:
-        logger.error(f"Error getting IP info: {e}")
-    
-    return {
-        'ip': ip_address,
-        'hostname': 'N/A',
-        'city': 'N/A',
-        'region': 'N/A',
-        'country': 'N/A',
-        'loc': 'N/A',
-        'org': 'N/A',
-        'postal': 'N/A',
-        'timezone': 'N/A'
-    }
-
-def get_client_ip():
-    """Get the real client IP address"""
-    # Check for forwarded headers first
-    if request.headers.get('X-Forwarded-For'):
-        # Get the first IP in the chain (original client)
-        return request.headers.get('X-Forwarded-For').split(',')[0].strip()
-    elif request.headers.get('X-Real-IP'):
-        return request.headers.get('X-Real-IP')
-    elif request.headers.get('CF-Connecting-IP'):  # Cloudflare
-        return request.headers.get('CF-Connecting-IP')
-    else:
-        return request.remote_addr
-
-async def send_verification_log(discord_user, roblox_data, ip_info, is_reverify=False):
-    """Send verification log to Discord channel"""
-    try:
-        if not DISCORD_BOT_TOKEN or not VERIFICATION_LOG_CHANNEL_ID:
-            logger.warning("Discord logging not configured - skipping log")
-            return
-        
-        # Parse location data
-        location_parts = ip_info.get('loc', 'N/A').split(',') if ip_info.get('loc') != 'N/A' else ['N/A', 'N/A']
-        latitude = location_parts[0] if len(location_parts) > 0 else 'N/A'
-        longitude = location_parts[1] if len(location_parts) > 1 else 'N/A'
-        
-        # Create embed data
-        embed_data = {
-            "title": "Arrow Verification Logs",
-            "description": f"Viewing verification log for <@{discord_user['id']}>",
-            "color": 0x2E4F8E,  # discord.Color.blue() equivalent
-            "fields": [
-                {
-                    "name": "Verification Information",
-                    "value": (
-                        f"Discord: <@{discord_user['id']}> | {discord_user['id']} | {discord_user['username']}\n"
-                        f"ROBLOX: {roblox_data.get('username', 'N/A')} | {roblox_data.get('id', 'N/A')} | "
-                        f"https://www.roblox.com/users/{roblox_data.get('id', '0')}/profile\n"
-                        f"Method: OAuth2"
-                    ),
-                    "inline": False
-                },
-                {
-                    "name": "Data",
-                    "value": (
-                        f"Association: {ip_info.get('org', 'N/A')}\n"
-                        f"Country Code: {ip_info.get('country', 'N/A')}\n"
-                        f"Internet Service Provider: {ip_info.get('org', 'N/A')}\n"
-                        f"Latitude: {latitude}\n"
-                        f"Longitude: {longitude}\n"
-                        f"Region Name: {ip_info.get('region', 'N/A')}\n"
-                        f"IP: {ip_info.get('ip', 'N/A')}"
-                    ),
-                    "inline": False
-                }
-            ],
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        
-        # Add author field
-        if discord_user.get('avatar'):
-            avatar_url = f"https://cdn.discordapp.com/avatars/{discord_user['id']}/{discord_user['avatar']}.png"
-        else:
-            avatar_url = f"https://cdn.discordapp.com/embed/avatars/{int(discord_user['id']) % 5}.png"
-        
-        embed_data["author"] = {
-            "name": discord_user.get('global_name') or discord_user['username'],
-            "icon_url": avatar_url
-        }
-        
-        # Send to Discord using bot token
-        headers = {
-            'Authorization': f'Bot {DISCORD_BOT_TOKEN}',
-            'Content-Type': 'application/json'
-        }
-        
-        payload = {
-            'embeds': [embed_data]
-        }
-        
-        async with aiohttp.ClientSession() as session:
-            url = f"https://discord.com/api/v10/channels/{VERIFICATION_LOG_CHANNEL_ID}/messages"
-            async with session.post(url, headers=headers, json=payload) as response:
-                if response.status == 200:
-                    logger.info(f"Successfully sent verification log for Discord ID {discord_user['id']}")
-                else:
-                    error_text = await response.text()
-                    logger.error(f"Failed to send Discord log: {response.status} - {error_text}")
-                    
-    except Exception as e:
-        logger.error(f"Error sending verification log: {e}")
+def cleanup_expired_sessions():
+    """Remove expired sessions"""
+    current_time = time.time()
+    expired = [k for k, v in verification_sessions.items() if v['expires_at'] < current_time]
+    for key in expired:
+        del verification_sessions[key]
 
 @app.route('/')
-def index():
+def home():
+    """Landing page"""
     return render_template('index.html')
 
-@app.route('/auth/discord')
-def discord_auth():
-    # Generate state for security
-    state = secrets.token_urlsafe(32)
-    session['oauth_state'] = state
+@app.route('/api/create', methods=['POST'])
+def create_verification():
+    """API endpoint to create a one-time verification link"""
+    try:
+        data = request.json
+        discord_username = data.get('discord_username')
+        discord_id = data.get('discord_id')
+        
+        if not discord_username or not discord_id:
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        # Generate unique session ID
+        session_id = secrets.token_urlsafe(32)
+        
+        # Store session (expires in 2 minutes)
+        verification_sessions[session_id] = {
+            'discord_username': discord_username,
+            'discord_id': discord_id,
+            'time_unix': int(time.time()),
+            'expires_at': time.time() + 120,  # 2 minutes
+            'used': False
+        }
+        
+        # Cleanup old sessions
+        cleanup_expired_sessions()
+        
+        verification_url = f"{REDIRECT_URI}/verify/{session_id}"
+        
+        return jsonify({
+            'success': True,
+            'verification_url': verification_url,
+            'session_id': session_id,
+            'expires_in': 120
+        }), 200
     
-    params = {
-        'client_id': DISCORD_CLIENT_ID,
-        'redirect_uri': DISCORD_REDIRECT_URI,
-        'response_type': 'code',
-        'scope': 'identify',
-        'state': state
-    }
-    
-    discord_auth_url = f"https://discord.com/api/oauth2/authorize?{urlencode(params)}"
-    return redirect(discord_auth_url)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-@app.route('/auth/discord/callback')
-def discord_callback():
-    # Check for OAuth errors first
-    error = request.args.get('error')
-    if error:
-        error_description = request.args.get('error_description', 'Unknown error')
-        print(f"Discord OAuth error: {error} - {error_description}")
-        return render_template('error.html', error=f"Discord OAuth error: {error_description}")
+@app.route('/verify/<session_id>')
+def start_verification(session_id):
+    """Start verification process"""
+    cleanup_expired_sessions()
     
-    # Get the authorization code
-    code = request.args.get('code')
-    if not code:
-        print("Discord callback received with no code parameter")
-        return render_template('error.html', error="No authorization code received")
+    # Check if session exists and is valid
+    if session_id not in verification_sessions:
+        return render_template('error.html', message="Verification link expired or invalid")
     
-    print(f"Discord callback received with code: {code[:10]}...")
+    session_data = verification_sessions[session_id]
     
-    # Check if Discord credentials are available
-    if not DISCORD_CLIENT_ID or not DISCORD_CLIENT_SECRET:
-        return render_template('error.html', error="Discord OAuth not configured")
+    # Check if already used
+    if session_data['used']:
+        return render_template('error.html', message="Verification link already used")
     
-    # Verify state parameter
-    if request.args.get('state') != session.get('oauth_state'):
-        return render_template('error.html', error="Invalid state parameter")
+    # Check if expired
+    if session_data['expires_at'] < time.time():
+        del verification_sessions[session_id]
+        return render_template('error.html', message="Verification link expired")
     
-    # Exchange code for access token
-    token_data = {
-        'client_id': DISCORD_CLIENT_ID,
-        'client_secret': DISCORD_CLIENT_SECRET,
-        'grant_type': 'authorization_code',
-        'code': code,
-        'redirect_uri': DISCORD_REDIRECT_URI
-    }
+    # Mark as used
+    verification_sessions[session_id]['used'] = True
     
-    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-    token_response = requests.post('https://discord.com/api/oauth2/token', data=token_data, headers=headers)
+    # Store session ID in Flask session
+    session['verification_session'] = session_id
     
-    if token_response.status_code != 200:
-        return render_template('error.html', error="Failed to get Discord access token")
+    # Redirect to Roblox OAuth
+    roblox_auth_url = f"https://apis.roblox.com/oauth/v1/authorize?client_id={ROBLOX_CLIENT_ID}&redirect_uri={REDIRECT_URI}/auth/roblox/callback&scope=openid%20profile&response_type=code&state={session_id}"
     
-    token_json = token_response.json()
-    access_token = token_json.get('access_token')
-    
-    # Get user info
-    user_headers = {'Authorization': f'Bearer {access_token}'}
-    user_response = requests.get('https://discord.com/api/users/@me', headers=user_headers)
-    
-    if user_response.status_code != 200:
-        return render_template('error.html', error="Failed to get Discord user info")
-    
-    user_data = user_response.json()
-    
-    # Store Discord data in session (no database verification without ROBLOX)
-    session['discord_user'] = {
-        'id': user_data['id'],
-        'username': user_data['username'],
-        'discriminator': user_data.get('discriminator', '0'),
-        'avatar': user_data.get('avatar'),
-        'global_name': user_data.get('global_name')
-    }
-    
-    return render_template('discord_success.html', user=user_data)
-
-@app.route('/auth/roblox')
-def roblox_auth():
-    if 'discord_user' not in session:
-        return redirect(url_for('index'))
-    
-    # Check if ROBLOX OAuth is available
-    if not ROBLOX_CLIENT_ID or not ROBLOX_CLIENT_SECRET:
-        return render_template('error.html', error="ROBLOX OAuth2 credentials not configured. Please contact an administrator.")
-    
-    # Generate state for security
-    state = secrets.token_urlsafe(32)
-    session['roblox_state'] = state
-    
-    params = {
-        'client_id': ROBLOX_CLIENT_ID,
-        'redirect_uri': ROBLOX_REDIRECT_URI,
-        'response_type': 'code',
-        'scope': 'openid profile',
-        'state': state
-    }
-    
-    roblox_auth_url = f"https://apis.roblox.com/oauth/v1/authorize?{urlencode(params)}"
     return redirect(roblox_auth_url)
 
 @app.route('/auth/roblox/callback')
 def roblox_callback():
-    # Verify state parameter
-    if request.args.get('state') != session.get('roblox_state'):
-        return render_template('verification_result.html', success=False, error="Invalid state parameter")
-    
+    """Handle Roblox OAuth callback"""
     code = request.args.get('code')
-    if not code:
-        return render_template('verification_result.html', success=False, error="No authorization code received")
+    state = request.args.get('state')
     
-    # Exchange code for access token
-    token_data = {
-        'client_id': ROBLOX_CLIENT_ID,
-        'client_secret': ROBLOX_CLIENT_SECRET,
-        'grant_type': 'authorization_code',
-        'code': code,
-        'redirect_uri': ROBLOX_REDIRECT_URI
-    }
+    if not code or not state:
+        return render_template('error.html', message="Invalid callback from Roblox")
     
-    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-    token_response = requests.post('https://apis.roblox.com/oauth/v1/token', data=token_data, headers=headers)
+    # Verify state matches session
+    if state not in verification_sessions:
+        return render_template('error.html', message="Invalid verification session")
     
-    if token_response.status_code != 200:
-        return render_template('verification_result.html', success=False, error="Failed to get ROBLOX access token")
-    
-    token_json = token_response.json()
-    access_token = token_json.get('access_token')
-    
-    # Get user info
-    user_headers = {'Authorization': f'Bearer {access_token}'}
-    user_response = requests.get('https://apis.roblox.com/oauth/v1/userinfo', headers=user_headers)
-    
-    if user_response.status_code != 200:
-        return render_template('verification_result.html', success=False, error="Failed to get ROBLOX user info")
-    
-    roblox_data = user_response.json()
-    discord_user = session.get('discord_user')
-    
-    if not discord_user:
-        return render_template('verification_result.html', success=False, error="Discord session expired")
-    
-    # Get ROBLOX user data via API
-    roblox_id = roblox_data.get('sub')
-    roblox_username = roblox_data.get('preferred_username')
-    
-    # Get additional ROBLOX user info
-    roblox_user_response = requests.get(f'https://users.roblox.com/v1/users/{roblox_id}')
-    roblox_user_info = {}
-    if roblox_user_response.status_code == 200:
-        roblox_user_info = roblox_user_response.json()
-    
-    # Get ROBLOX avatar headshot
-    avatar_response = requests.get(f'https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={roblox_id}&size=150x150&format=Png&isCircular=true')
-    avatar_url = None
-    
-    if avatar_response.status_code == 200:
-        avatar_data = avatar_response.json()
-        if avatar_data.get('data') and len(avatar_data['data']) > 0:
-            avatar_url = avatar_data['data'][0].get('imageUrl')
-    
-    # Get group memberships for additional verification
-    group_memberships = []
-    groups_response = requests.get(f'https://groups.roblox.com/v2/users/{roblox_id}/groups?limit=100')
-    if groups_response.status_code == 200:
-        groups_data = groups_response.json()
-        group_memberships = groups_data.get('data', [])
-    
-    # Check if user was previously verified (reverification)
     try:
-        collection = get_db_collection()
-        if collection is None:
-            # Skip database operations if MongoDB is not available
-            logger.warning("MongoDB not available, skipping database operations")
-            is_reverify = False
-            banned = False
-            suspended = False
-        else:
-            # Convert IDs to integers for database queries
-            discord_id = int(discord_user['id'])
-            roblox_id_int = int(roblox_id)
-            
-            # Check for existing verification
-            existing_verification = collection.find_one({
-                '$or': [
-                    {'_id': discord_id},
-                    {'roblox': roblox_id_int}
-                ]
-            })
-            
-            is_reverify = existing_verification is not None
-            
-            # Check for banned/suspended status from existing records
-            banned = False
-            suspended = False
-            if existing_verification:
-                banned = existing_verification.get('banned', False)
-                suspended = existing_verification.get('suspended', False)
-                logger.info(f"Found existing verification for Discord ID {discord_id}")
-            else:
-                # Check all records with this ROBLOX ID for banned/suspended status
-                all_records = list(collection.find({'roblox': roblox_id_int}))
-                if all_records:
-                    banned = any(record.get('banned', False) for record in all_records)
-                    suspended = any(record.get('suspended', False) for record in all_records)
-                    logger.info(f"Found {len(all_records)} existing records for ROBLOX ID {roblox_id_int}")
-            
-            # Store verification data using bot's schema
-            verification_data = {
-                '_id': discord_id,
-                'roblox': roblox_id_int,
-                'banned': banned,
-                'suspended': suspended
-            }
-            
-            # Upsert verification record with retry logic
-            max_retries = 3
-            for retry_attempt in range(max_retries):
-                try:
-                    result = collection.replace_one(
-                        {'_id': discord_id},
-                        verification_data,
-                        upsert=True
-                    )
-                    break  # Success, exit retry loop
-                except pymongo.errors.ServerSelectionTimeoutError:
-                    if retry_attempt == max_retries - 1:  # Last attempt
-                        raise
-                    logger.warning(f"Database operation retry {retry_attempt + 1}/{max_retries}")
-                    import time
-                    time.sleep(2)
-            
-            if result.upserted_id:
-                logger.info(f"Created new verification record for Discord ID {discord_id}")
-            else:
-                logger.info(f"Updated existing verification record for Discord ID {discord_id}")
+        # Exchange code for access token
+        token_response = requests.post('https://apis.roblox.com/oauth/v1/token', data={
+            'client_id': ROBLOX_CLIENT_ID,
+            'client_secret': ROBLOX_CLIENT_SECRET,
+            'grant_type': 'authorization_code',
+            'code': code
+        })
         
-    except pymongo.errors.ServerSelectionTimeoutError as e:
-        logger.error(f"MongoDB server selection timeout: {e}")
-        return render_template('verification_result.html', success=False, error="Database connection timeout. Please try again later.")
-    except pymongo.errors.ConnectionFailure as e:
-        logger.error(f"MongoDB connection failure: {e}")
-        return render_template('verification_result.html', success=False, error="Database connection failed. Please try again later.")
-    except pymongo.errors.PyMongoError as e:
-        logger.error(f"MongoDB error during verification: {e}")
-        return render_template('verification_result.html', success=False, error="Database error. Please try again later.")
-    except ValueError as e:
-        logger.error(f"Data conversion error: {e}")
-        return render_template('verification_result.html', success=False, error="Invalid user ID format")
-    except Exception as e:
-        logger.error(f"Unexpected error during verification: {e}")
-        return render_template('verification_result.html', success=False, error="An unexpected error occurred during verification")
-    
-    # Get client IP and IP information for logging
-    client_ip = get_client_ip()
-    
-    # Get IP information asynchronously
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        ip_info = loop.run_until_complete(get_ip_info(client_ip))
+        if token_response.status_code != 200:
+            return render_template('error.html', message="Failed to authenticate with Roblox")
         
-        # Send verification log to Discord
-        roblox_log_data = {
-            'id': roblox_id,
-            'username': roblox_username
-        }
-        loop.run_until_complete(send_verification_log(discord_user, roblox_log_data, ip_info, is_reverify))
-        loop.close()
+        token_data = token_response.json()
+        access_token = token_data['access_token']
         
-        logger.info(f"Verification logged for Discord ID {discord_user['id']} with IP {client_ip}")
+        # Get user info
+        user_response = requests.get('https://apis.roblox.com/oauth/v1/userinfo', headers={
+            'Authorization': f'Bearer {access_token}'
+        })
+        
+        if user_response.status_code != 200:
+            return render_template('error.html', message="Failed to get Roblox user info")
+        
+        roblox_user = user_response.json()
+        
+        # Store Roblox data in session
+        verification_sessions[state]['roblox_id'] = roblox_user['sub']
+        verification_sessions[state]['roblox_username'] = roblox_user['preferred_username']
+        verification_sessions[state]['roblox_profile_url'] = roblox_user['profile']
+        verification_sessions[state]['verified'] = True
+        
+        # Move to completed verifications
+        completed_verifications[state] = verification_sessions[state].copy()
+        completed_verifications[state]['completed_at'] = int(time.time())
+        
+        # Show success page
+        return render_template('success.html', data=completed_verifications[state])
+    
     except Exception as e:
-        logger.error(f"Error during IP collection or logging: {e}")
-    
-    # Prepare data for template
-    result_data = {
-        'discord_user': discord_user,
-        'roblox_data': {
-            'id': roblox_id,
-            'username': roblox_username,
-            'display_name': roblox_user_info.get('displayName', roblox_username),
-            'description': roblox_user_info.get('description', ''),
-            'created': roblox_user_info.get('created', ''),
-            'avatar_url': avatar_url
-        },
-        'is_reverify': is_reverify,
-        'banned': banned,
-        'suspended': suspended,
-        'group_memberships': group_memberships[:5]  # Show top 5 groups
-    }
-    
-    return render_template('verification_result.html', success=True, data=result_data)
+        return render_template('error.html', message=f"Error during Roblox authentication: {str(e)}")
 
-@app.route('/terms')
-def terms():
-    return render_template('terms.html')
-
-@app.route('/privacy')
-def privacy():
-    return render_template('privacy.html')
-
-@app.route('/health')
-def health_check():
-    health_status = {
-        'status': 'healthy',
-        'message': 'OAuth verification service is running',
-        'database': 'disconnected',
-        'timestamp': datetime.utcnow().isoformat()
-    }
-    
-    # Test database connection
-    try:
-        collection = get_db_collection()
-        if collection is not None:
-            # Test with a simple ping
-            collection.database.client.admin.command('ping')
-            health_status['database'] = 'connected'
-            
-            # Get collection stats
-            stats = collection.database.command('collStats', 'verifiedusers')
-            health_status['database_stats'] = {
-                'document_count': stats.get('count', 0),
-                'size_bytes': stats.get('size', 0)
-            }
-    except Exception as e:
-        health_status['database'] = f'error: {str(e)}'
-        logger.error(f"Health check database error: {e}")
-    
-    return jsonify(health_status)
-
-@app.route('/test')
-def test_route():
-    return "Railway app is working! Routes are accessible."
-
-# Add cleanup handler for graceful shutdown
-import atexit
-atexit.register(close_db_connection)
-
-# Remove deprecated before_first_request - use startup logging instead
-logger.info("Flask app initialized successfully!")
-logger.info(f"Available routes: {[rule.rule for rule in app.url_map.iter_rules()]}")
+@app.route('/api/check/<session_id>')
+def check_verification(session_id):
+    """API endpoint to check verification status"""
+    if session_id in completed_verifications:
+        return jsonify({
+            'verified': True,
+            'data': completed_verifications[session_id]
+        }), 200
+    elif session_id in verification_sessions:
+        return jsonify({
+            'verified': False,
+            'status': 'pending'
+        }), 200
+    else:
+        return jsonify({
+            'verified': False,
+            'status': 'not_found'
+        }), 404
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    logger.info(f"Starting Flask app on port {port}")
-    logger.info(f"Available routes: {[rule.rule for rule in app.url_map.iter_rules()]}")
-    app.run(debug=False, host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port)

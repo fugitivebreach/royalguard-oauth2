@@ -1,113 +1,155 @@
-# Arrow Industries OAuth Verification System
+# Royal Guard OAuth2 Verification Server
 
-A secure OAuth2 verification system that links Discord and ROBLOX accounts for server verification purposes.
+Railway-hosted OAuth2 verification system for Discord and Roblox integration.
 
 ## Features
 
-- **Discord OAuth2 Integration**: Secure Discord login with user profile access
-- **ROBLOX OAuth2 Integration**: ROBLOX account verification with profile data
-- **Modern UI**: All-black theme with rounded elements and smooth animations
-- **Legal Compliance**: Full Terms of Service and Privacy Policy with USC law citations
-- **Database Integration**: MongoDB storage for verification records
-- **Reverification Detection**: Tracks if users have previously verified
-- **Railway Deployment Ready**: Configured for easy Railway hosting
+- **One-time verification links** (2-minute expiry)
+- **Dual OAuth2 flow** (Roblox → Discord)
+- **Minimalistic UI** with black background and #363636 styling
+- **API endpoints** for bot integration
+- **Session management** with automatic cleanup
 
-## Setup
+## Deployment to Railway
 
-1. **Environment Variables**
-   Copy `.env.example` to `.env` and configure:
-   ```
-   DISCORD_CLIENT_ID=your_discord_client_id
-   DISCORD_CLIENT_SECRET=your_discord_client_secret
-   DISCORD_REDIRECT_URI=https://your-domain.com/auth/discord/callback
-   
-   ROBLOX_CLIENT_ID=your_roblox_client_id
-   ROBLOX_CLIENT_SECRET=your_roblox_client_secret
-   ROBLOX_REDIRECT_URI=https://your-domain.com/auth/roblox/callback
-   
-   MONGO_URI=mongodb://localhost:27017/royalguard
-   SECRET_KEY=your_secret_key_here
+1. **Create a new Railway project**
+   ```bash
+   railway login
+   railway init
    ```
 
-2. **Discord OAuth2 Application**
-   - Go to https://discord.com/developers/applications
-   - Create a new application
-   - Go to OAuth2 → General
-   - Add redirect URI: `https://your-domain.com/auth/discord/callback`
-   - Copy Client ID and Client Secret
+2. **Set environment variables in Railway dashboard:**
+   - `SECRET_KEY` - Random secret key for Flask sessions
+   - `ROBLOX_CLIENT_ID` - Your Roblox OAuth2 client ID
+   - `ROBLOX_CLIENT_SECRET` - Your Roblox OAuth2 client secret
+   - `REDIRECT_URI` - Your Railway app URL (e.g., `https://your-app.railway.app`)
 
-3. **ROBLOX OAuth2 Application**
-   - Go to https://create.roblox.com/credentials
-   - Create a new OAuth2 application
-   - Set redirect URI: `https://your-domain.com/auth/roblox/callback`
-   - Request scopes: `openid`, `profile`
-   - Copy Client ID and Client Secret
+3. **Deploy:**
+   ```bash
+   railway up
+   ```
 
-4. **MongoDB Database**
-   - Set up MongoDB instance (local or cloud)
-   - Database: `royalguard`
-   - Collection: `oauth_verifications`
+## OAuth2 Setup
 
-## Deployment
-
-### Railway Deployment
-
-1. Connect your GitHub repository to Railway
-2. Set environment variables in Railway dashboard
-3. Deploy automatically with the included `Procfile`
-
-### Local Development
-
-```bash
-pip install -r requirements.txt
-python app.py
-```
+### Roblox OAuth2
+1. Go to https://create.roblox.com/credentials
+2. Create new OAuth2 app
+3. Set redirect URI: `https://your-app.railway.app/auth/roblox/callback`
+4. Copy Client ID and Secret
 
 ## API Endpoints
 
-- `GET /` - Main landing page with Discord login
-- `GET /auth/discord` - Initiate Discord OAuth2 flow
-- `GET /auth/discord/callback` - Discord OAuth2 callback
-- `GET /auth/roblox` - Initiate ROBLOX OAuth2 flow
-- `GET /auth/roblox/callback` - ROBLOX OAuth2 callback
-- `GET /terms` - Terms of Service page
-- `GET /privacy` - Privacy Policy page
+### Create Verification Link
+```http
+POST /api/create
+Content-Type: application/json
 
-## Database Schema
-
-```javascript
 {
-  _id: ObjectId,
-  discord_id: String,
-  discord_username: String,
-  discord_discriminator: String,
-  discord_global_name: String,
-  discord_avatar: String,
-  roblox_id: String,
-  roblox_username: String,
-  roblox_name: String,
-  roblox_avatar_url: String,
-  verified_at: Date,
-  is_reverify: Boolean
+  "discord_username": "User#1234",
+  "discord_id": "123456789012345678"
 }
 ```
 
-## Security Features
+**Response:**
+```json
+{
+  "success": true,
+  "verification_url": "https://your-app.railway.app/verify/abc123...",
+  "session_id": "abc123...",
+  "expires_in": 120
+}
+```
 
-- CSRF protection with state parameters
-- Secure session management
-- Input validation and sanitization
-- Rate limiting ready
-- HTTPS enforcement in production
+### Check Verification Status
+```http
+GET /api/check/{session_id}
+```
 
-## Legal Compliance
+**Response (Completed):**
+```json
+{
+  "verified": true,
+  "data": {
+    "discord_id": "123456789012345678",
+    "discord_username": "User#1234",
+    "roblox_id": "987654321",
+    "roblox_username": "RobloxUser",
+    "completed_at": 1704470400
+  }
+}
+```
 
-- GDPR Article 6, 13, 15-22 compliance
-- CCPA § 1798.100-130 compliance
-- COPPA 15 U.S.C. § 6501-6502 compliance
-- Communications Decency Act 47 U.S.C. § 230
-- Federal Records Act 44 U.S.C. § 3101
+## Bot Integration Example
 
-## License
+```python
+import aiohttp
 
-© 2025 Arrow Industries. All Rights Reserved.
+async def create_verification_link(discord_user):
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            'https://your-app.railway.app/api/create',
+            json={
+                'discord_username': str(discord_user),
+                'discord_id': str(discord_user.id)
+            }
+        ) as resp:
+            data = await resp.json()
+            return data['verification_url']
+
+async def check_verification(session_id):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            f'https://your-app.railway.app/api/check/{session_id}'
+        ) as resp:
+            return await resp.json()
+```
+
+## File Structure
+
+```
+oauth_server/
+├── app.py                  # Main Flask application
+├── requirements.txt        # Python dependencies
+├── Procfile               # Railway deployment config
+├── railway.json           # Railway build config
+├── .env.example           # Environment variables template
+├── templates/
+│   ├── index.html         # Landing page
+│   ├── redirect.html      # 5-second redirect page
+│   ├── success.html       # Verification complete page
+│   └── error.html         # Error page
+└── static/
+    └── RoyalGuardLogo.png # Logo image (add this file)
+
+```
+
+## Static Files
+
+**Required:** Place `RoyalGuardLogo.png` in the `static/` folder before deploying.
+
+## Flow
+
+1. Bot calls `/api/create` with Discord user info (already known)
+2. User clicks verification link
+3. User authenticates with Roblox OAuth2
+4. Verification complete - displays Roblox profile with Discord info
+5. Bot polls `/api/check/{session_id}` to get results
+
+## Security
+
+- One-time use links (marked as used after first access)
+- 2-minute expiration on all sessions
+- Automatic cleanup of expired sessions
+- State parameter validation
+
+## Local Development
+
+```bash
+cd oauth_server
+pip install -r requirements.txt
+cp .env.example .env
+# Edit .env with your credentials
+python app.py
+```
+
+Visit `http://localhost:5000`
