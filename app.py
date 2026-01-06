@@ -117,6 +117,49 @@ def roblox_callback():
         return render_template('error.html', message="Invalid verification session")
     
     try:
+        # Get user IP address
+        user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        if ',' in user_ip:
+            user_ip = user_ip.split(',')[0].strip()
+        
+        # Get geolocation data from IP
+        geo_data = {}
+        try:
+            geo_response = requests.get(f'http://ip-api.com/json/{user_ip}?fields=status,country,countryCode,region,lat,lon,isp,query')
+            if geo_response.status_code == 200:
+                geo_json = geo_response.json()
+                if geo_json.get('status') == 'success':
+                    geo_data = {
+                        'ip': geo_json.get('query', user_ip),
+                        'country': geo_json.get('country', 'Unknown'),
+                        'country_code': geo_json.get('countryCode', 'Unknown'),
+                        'region': geo_json.get('region', 'Unknown'),
+                        'latitude': geo_json.get('lat', 0.0),
+                        'longitude': geo_json.get('lon', 0.0),
+                        'isp': geo_json.get('isp', 'Unknown')
+                    }
+                else:
+                    geo_data = {
+                        'ip': user_ip,
+                        'country': 'Unknown',
+                        'country_code': 'Unknown',
+                        'region': 'Unknown',
+                        'latitude': 0.0,
+                        'longitude': 0.0,
+                        'isp': 'Unknown'
+                    }
+        except Exception as geo_error:
+            print(f"[GEOLOCATION] Error fetching geo data: {geo_error}")
+            geo_data = {
+                'ip': user_ip,
+                'country': 'Unknown',
+                'country_code': 'Unknown',
+                'region': 'Unknown',
+                'latitude': 0.0,
+                'longitude': 0.0,
+                'isp': 'Unknown'
+            }
+        
         # Exchange code for access token
         token_response = requests.post('https://apis.roblox.com/oauth/v1/token', data={
             'client_id': ROBLOX_CLIENT_ID,
@@ -141,11 +184,12 @@ def roblox_callback():
         
         roblox_user = user_response.json()
         
-        # Store Roblox data in session
+        # Store Roblox data and geolocation in session
         verification_sessions[state]['roblox_id'] = roblox_user['sub']
         verification_sessions[state]['roblox_username'] = roblox_user['preferred_username']
         verification_sessions[state]['roblox_profile_url'] = roblox_user['profile']
         verification_sessions[state]['verified'] = True
+        verification_sessions[state]['geolocation'] = geo_data
         
         # Move to completed verifications
         completed_verifications[state] = verification_sessions[state].copy()
