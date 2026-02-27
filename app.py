@@ -34,6 +34,16 @@ def home():
     """Landing page"""
     return render_template('index.html')
 
+@app.route('/tos')
+def terms_of_service():
+    """Terms of Service page"""
+    return render_template('tos.html')
+
+@app.route('/privacy')
+def privacy_policy():
+    """Privacy Policy page"""
+    return render_template('privacy.html')
+
 @app.route('/api/create', methods=['POST'])
 def create_verification():
     """API endpoint to create a one-time verification link"""
